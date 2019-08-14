@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from IPython.display import HTML
 import itertools
+from numpy.random import randint
 
 
 # Set random seem for reproducibility
@@ -75,18 +76,19 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 
-
 class Generator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self, ngpu, opChannels, activationG):
         super(Generator, self).__init__()
         self.ngpu = ngpu
+        self.activationG = activationG
 
-        activationF = []
-        for x in range(4):
-            activationF.append(random.randint(0, 2))
+        print(self.activationG)
+
+        self.opChannels = opChannels
         ip = nz
-        op = ngf * 8
         i = 0
+        op = self.opChannels[i]
+
         model = []
         while i < 4:
 
@@ -96,16 +98,18 @@ class Generator(nn.Module):
             else:
                 model += [nn.ConvTranspose2d(ip, op, 4, 2, 1, bias=False),
                           nn.BatchNorm2d(op)]
-            if activationF[i] == 0:
+            if self.activationG[i] == 0:
                 model += [nn.LeakyReLU(0.2)]
-            elif activationF[i] == 1:
+            elif self.activationG[i] == 1:
                 model += [nn.ReLU(inplace=True)]
-            elif activationF[i] == 2:
+            elif self.activationG[i] == 2:
                 model += [nn.ELU(inplace=True)]
 
             ip = op
-            op = op // 2
             i = i + 1
+
+            if i < 4:
+                op = self.opChannels[i]
 
         model += [
             nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
@@ -117,35 +121,37 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self, ngpu,opChannels,activationF):
         super(Discriminator, self).__init__()
         self.ngpu = ngpu
+        self.activationF = activationF
+        self.opChannels = opChannels
 
-        activationF = []
-        for x in range(4):
-            activationF.append(random.randint(0,2))
+
         ip = nc
         op = ndf
         i = 0
         model = []
-        while i < 4:
+        layers = 4
+        while i < layers:
             model += [nn.Conv2d(ip, op, 4, 2, 1, bias=False)]
             if i > 0:
                 model += [nn.BatchNorm2d(op)]
 
-            if activationF[i] == 0:
+            if self.activationF[i] == 0:
                 model += [nn.LeakyReLU(0.2)]
-            elif activationF[i] == 1:
+            elif self.activationF[i] == 1:
                 model += [nn.ReLU(inplace=True)]
-            elif activationF[i] == 2:
+            elif self.activationF[i] == 2:
                 model += [nn.ELU(inplace=True)]
 
 
             ip = op
-            op = op*2
+            op = self.opChannels[i]
+
             i = i+1
         model += [
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Conv2d(ip, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()]
         self.main = torch.nn.Sequential(*model)
 
@@ -177,7 +183,12 @@ if __name__ == '__main__':
         np.transpose(vutils.make_grid(real_batch[0].to(device)[:64], padding=2, normalize=True).cpu(), (1, 2, 0)))
     # plt.show()
     # Create the generator
-    netG = Generator(ngpu).to(device)
+    activationG = [randint(0, 3) for x in range(4)]
+    # Generator output should be
+    opFeatures = [randint(64, 513) for i in range(3)]
+    opFeatures.append(64)
+
+    netG = Generator(ngpu,opFeatures,activationG).to(device)
 
     # Handle multi-gpu if desired
     if (device.type == 'cuda') and (ngpu > 1):
@@ -191,7 +202,9 @@ if __name__ == '__main__':
     print(netG)
 
     # Create the Discriminator
-    netD = Discriminator(ngpu).to(device)
+    activationF = [randint(0, 3) for x in range(4)]
+    opFeatures = [randint(64, 513) for i in range(4)]
+    netD = Discriminator(ngpu,opFeatures,activationF).to(device)
 
     # Handle multi-gpu if desired
     if (device.type == 'cuda') and (ngpu > 1):

@@ -64,6 +64,7 @@ beta1 = 0.5
 
 # Number of GPUs available. Use 0 for CPU mode.
 ngpu = 1
+nolayers = 5
 
 
 # custom weights initialization called on netG and netD
@@ -81,16 +82,15 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         self.ngpu = ngpu
         self.activationG = activationG
-
-        print(self.activationG)
-
         self.opChannels = opChannels
+
         ip = nz
         i = 0
+        # Create model based on genome
         op = self.opChannels[i]
 
         model = []
-        while i < 4:
+        while i < nolayers-1:
 
             if i == 0:
                 model += [nn.ConvTranspose2d(ip, op, 4, 1, 0, bias=False),
@@ -108,7 +108,7 @@ class Generator(nn.Module):
             ip = op
             i = i + 1
 
-            if i < 4:
+            if i < nolayers-1:
                 op = self.opChannels[i]
 
         model += [
@@ -132,8 +132,8 @@ class Discriminator(nn.Module):
         op = ndf
         i = 0
         model = []
-        layers = 4
-        while i < layers:
+
+        while i < nolayers-1:
             model += [nn.Conv2d(ip, op, 4, 2, 1, bias=False)]
             if i > 0:
                 model += [nn.BatchNorm2d(op)]
@@ -183,9 +183,9 @@ if __name__ == '__main__':
         np.transpose(vutils.make_grid(real_batch[0].to(device)[:64], padding=2, normalize=True).cpu(), (1, 2, 0)))
     # plt.show()
     # Create the generator
-    activationG = [randint(0, 3) for x in range(4)]
+    activationG = [randint(0, 3) for x in range(nolayers-1)]
     # Generator output should be
-    opFeatures = [randint(64, 513) for i in range(3)]
+    opFeatures = [randint(64, 513) for i in range(nolayers-2)]
     opFeatures.append(64)
 
     netG = Generator(ngpu,opFeatures,activationG).to(device)
@@ -200,10 +200,9 @@ if __name__ == '__main__':
 
     # Print the model
     print(netG)
-
     # Create the Discriminator
-    activationF = [randint(0, 3) for x in range(4)]
-    opFeatures = [randint(64, 513) for i in range(4)]
+    activationF = [randint(0, 3) for x in range(nolayers-1)]
+    opFeatures = [randint(64, 513) for i in range(nolayers-1)]
     netD = Discriminator(ngpu,opFeatures,activationF).to(device)
 
     # Handle multi-gpu if desired
@@ -334,6 +333,27 @@ if __name__ == '__main__':
                     fig.savefig(path)
                 plt.close()
             iters += 1
+
+
+    # Get FID score for the model:
+    from metrics import generative_score
+    base_fid_statistics, inception_model = generative_score.initialize_fid(dataloader, sample_size=1000)
+    from metrics.fid import fid_score
+    from util import tools
+
+    noise = torch.randn(1000, 100, 1, 1, device=device)
+    netG.eval()
+    generated_images = netG(noise).detach()
+    inception_model = tools.cuda(inception_model)
+    m1, s1 = fid_score.calculate_activation_statistics(
+        generated_images.data.cpu().numpy(), inception_model, cuda=tools.is_cuda_available(),
+        dims=2048)
+    inception_model.cpu()
+    m2, s2 = base_fid_statistics
+    ret = fid_score.calculate_frechet_distance(m1, s1, m2, s2)
+    netG.zero_grad()
+    print("Fid score is :",ret)
+
 
     plt.figure(figsize=(10, 5))
     plt.title("Generator and Discriminator Loss During Training")

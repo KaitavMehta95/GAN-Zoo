@@ -213,6 +213,8 @@ if __name__ == '__main__':
             # Format batch
             real_cpu = data[0].to(device)
             b_size = real_cpu.size(0)
+            print("b_size")
+            print(b_size)
             label = torch.full((b_size,), real_label, device=device)
             f_label =  torch.full((b_size,), fake_label, device=device)
             # Forward pass real batch through D
@@ -222,6 +224,7 @@ if __name__ == '__main__':
             ## Train with all-fake batch
             # Generate batch of latent vectors
             noise = torch.randn(b_size, nz, 1, 1, device=device)
+            print("noise.size",noise.size())
             # Generate fake image batch with G
             fake = netG(noise)
             # Classify all fake batch with D

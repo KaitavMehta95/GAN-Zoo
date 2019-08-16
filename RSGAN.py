@@ -52,7 +52,7 @@ ngf = 64
 ndf = 64
 
 # Number of training epochs
-num_epochs = 5
+num_epochs = 100
 
 # Learning rate for optimizers
 lr = 0.0002
@@ -205,6 +205,9 @@ if __name__ == '__main__':
         # For each batch in the dataloader
         for i, data in enumerate(dataloader, 0):
 
+            if i > 20:
+                break
+
             ############################
             # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
             ###########################
@@ -287,6 +290,7 @@ if __name__ == '__main__':
 
             iters += 1
 
+    torch.save(netG, 'test.pkl')
     plt.figure(figsize=(10, 5))
     plt.title("Generator and Discriminator Loss During Training")
     plt.plot(G_losses, label="G")

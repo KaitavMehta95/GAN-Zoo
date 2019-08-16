@@ -18,7 +18,7 @@ import matplotlib.animation as animation
 from IPython.display import HTML
 import itertools
 from numpy.random import randint
-
+from util.ConvLayer import Conv2dSame
 
 # Set random seem for reproducibility
 manualSeed = 999
@@ -54,7 +54,7 @@ ngf = 64
 ndf = 64
 
 # Number of training epochs
-num_epochs = 50
+num_epochs = 5
 
 # Learning rate for optimizers
 lr = 0.0002
@@ -65,12 +65,12 @@ beta1 = 0.5
 # Number of GPUs available. Use 0 for CPU mode.
 ngpu = 1
 nolayers = 5
-
+noDlayers = randint(5,11)
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
     classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
+    if hasattr(m, 'weight') and classname.find('Conv') != -1:
         nn.init.normal_(m.weight.data, 0.0, 0.02)
     elif classname.find('BatchNorm') != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
@@ -83,7 +83,6 @@ class Generator(nn.Module):
         self.ngpu = ngpu
         self.activationG = activationG
         self.opChannels = opChannels
-
         ip = nz
         i = 0
         # Create model based on genome
@@ -121,7 +120,7 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, ngpu,opChannels,activationF):
+    def __init__(self, ngpu, opChannels, activationF,same_conv2d_pos):
         super(Discriminator, self).__init__()
         self.ngpu = ngpu
         self.activationF = activationF
@@ -133,8 +132,14 @@ class Discriminator(nn.Module):
         i = 0
         model = []
 
-        while i < nolayers-1:
-            model += [nn.Conv2d(ip, op, 4, 2, 1, bias=False)]
+        while i < noDlayers - 1:
+
+            if same_conv2d_pos[noDlayers][i] == 1:
+                # Add conv2d_same layers !
+                model += [Conv2dSame(ip, op, (4, 4), 1)]
+            else:
+                model += [nn.Conv2d(ip, op, 4, 2, 1)]
+
             if i > 0:
                 model += [nn.BatchNorm2d(op)]
 
@@ -145,13 +150,12 @@ class Discriminator(nn.Module):
             elif self.activationF[i] == 2:
                 model += [nn.ELU(inplace=True)]
 
-
             ip = op
             op = self.opChannels[i]
 
-            i = i+1
+            i = i + 1
         model += [
-            nn.Conv2d(ip, 1, 4, 1, 0, bias=False),
+            nn.Conv2d(ip, 1, 4, 1),
             nn.Sigmoid()]
         self.main = torch.nn.Sequential(*model)
 
@@ -173,7 +177,7 @@ if __name__ == '__main__':
 
     # Decide which device we want to run on
     device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
-
+    print(device)
     # Plot some training images
     real_batch = next(iter(dataloader))
     plt.figure(figsize=(8, 8))
@@ -201,9 +205,16 @@ if __name__ == '__main__':
     # Print the model
     print(netG)
     # Create the Discriminator
-    activationF = [randint(0, 3) for x in range(nolayers-1)]
-    opFeatures = [randint(64, 513) for i in range(nolayers-1)]
-    netD = Discriminator(ngpu,opFeatures,activationF).to(device)
+    activationF = [randint(0, 3) for x in range(noDlayers-1)]
+    opFeatures = [randint(64, 513) for i in range(noDlayers-1)]
+
+    same_conv2d_pos = {5: [0, 0, 0, 0, 0],
+                       6: [0, 1, 0, 0, 0, 0],
+                       7: [0, 1, 0, 1, 0, 0, 0],
+                       8: [0, 1, 0, 1, 0, 1, 0, 0],
+                       9: [0, 1, 0, 1, 0, 1, 0, 1, 0],
+                       10: [0, 1, 1, 0, 1, 0, 1, 0, 1, 0]}
+    netD = Discriminator(ngpu,opFeatures,activationF,same_conv2d_pos).to(device)
 
     # Handle multi-gpu if desired
     if (device.type == 'cuda') and (ngpu > 1):
@@ -243,7 +254,7 @@ if __name__ == '__main__':
         for i, data in enumerate(dataloader, 0):
 
             # 20 batches per epoch- 64 bsize * 20 batches per epoch -> 1280 samples per epoch
-            if i > 20:
+            if i > 2:
                 break
 
             ############################
@@ -254,12 +265,13 @@ if __name__ == '__main__':
             # Format batch
             real_cpu = data[0].to(device)
             b_size = real_cpu.size(0)
+
+
             label = torch.full((b_size,), real_label, device=device)
             f_label =  torch.full((b_size,), fake_label, device=device)
             # Forward pass real batch through D
             output = netD(real_cpu).view(-1)
             # Calculate loss on all-real batch
-
             #BCE loss
             errD_real = criterion(output,label)
             # Calculate gradients for D in backward pass

@@ -1,1 +1,1 @@
-# Cultural-evolution-of-Deep-Convolutional-GANs
+# Testing different evolution of GAN models
